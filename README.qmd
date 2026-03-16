@@ -1,0 +1,303 @@
+---
+title: "Barcelona Cycling Network Connectivity (LCC)"
+format: gfm
+editor: visual
+---
+
+This repository computes a **cycling network connectivity indicator** for Barcelona based on the **Largest Connected Component (LCC)** of the cycling infrastructure network.
+
+The indicator measures the **proportion of the cycling network that belongs to the main connected component**, capturing the degree of **network fragmentation**.
+
+Cycling infrastructure data come from **BCN Open Data**.
+
+# Indicator
+
+Connectivity is defined as:
+
+$$
+Connectivity = \frac{\text{Length of cycling network in the largest connected component}}{\text{Total cycling network length}}
+$$
+
+Interpretation:
+
+| Value | Meaning |
+|:---|:---|
+| ~1 | Highly connected network |
+| 0.6-0.8 | Moderate fragmentation |
+| <0.5 | Highly fragmented network |
+
+This indicator reflects the **continuity of the cycling network**, not just the total amount of infrastructure.
+
+# Data
+
+Cycling infrastructure data are obtained from **BCN Open Data**.
+
+Dataset:
+**Carrils bici de Barcelona**
+
+The dataset represents the official cycling infrastructure network maintained by the City of Barcelona.
+
+# Workflow
+
+1. Load cycling infrastructure data
+2. Clean and prepare the network
+3. Convert the network to a graph
+4. Identify connected components
+5. Compute total network length
+6. Compute length of the largest connected component
+7. Calculate the connectivity indicator
+
+```{r}
+library(sf)
+library(leaflet)
+
+# st_layers("data/Revisió_connectivitat.gpkg")
+
+cycle <- st_read("data/2025_4T_CARRIL_BICI/2025_4T_CARRIL_BICI.shp")
+
+tracts <- st_read(
+  "data/Revisió_connectivitat.gpkg",
+  layer = "Seccions_censals"
+)
+
+# work in projected CRS for metric buffers
+cycle_m <- st_transform(cycle, 25831)
+tracts_m <- st_transform(tracts, 25831)
+
+# optional buffers
+cycle_buf200 <- st_buffer(cycle_m, 200)
+tracts_buf50 <- st_buffer(tracts_m, 50)
+
+# back to leaflet CRS
+cycle_ll <- st_transform(cycle_m, 4326)
+tracts_ll <- st_transform(tracts_m, 4326)
+cycle_buf200_ll <- st_transform(cycle_buf200, 4326)
+tracts_buf50_ll <- st_transform(tracts_buf50, 4326)
+
+leaflet() |>
+  addProviderTiles(providers$CartoDB.Positron) |>
+  addPolygons(
+    data = tracts_ll,
+    fill = FALSE,
+    color = "black",
+    weight = 1,
+    group = "Census tracts"
+  ) |>
+  addPolygons(
+    data = tracts_buf50_ll,
+    fill = FALSE,
+    color = "red",
+    weight = 1,
+    group = "Tract buffer 50 m"
+  ) |>
+  addPolylines(
+    data = cycle_ll,
+    color = "blue",
+    weight = 2,
+    group = "Bike lanes"
+  ) |>
+  addPolygons(
+    data = cycle_buf200_ll,
+    fillColor = "blue",
+    fillOpacity = 0.15,
+    color = "blue",
+    weight = 1,
+    group = "Bike lane buffer 200 m"
+  ) |>
+  addLayersControl(
+    overlayGroups = c(
+      "Census tracts",
+      "Tract buffer 50 m",
+      "Bike lanes",
+      "Bike lane buffer 200 m"
+    ),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+```{r}
+library(sf)
+library(igraph)
+library(dplyr)
+library(leaflet)
+
+# prepare segments
+segments <- cycle |>
+  st_transform(25831) |>
+  st_cast("LINESTRING")
+
+# 5 m buffer on each side = connect segments up to 10 m apart
+buf <- st_buffer(segments, 15)
+
+# identify which buffered segments touch
+touch <- st_intersects(buf)
+
+# build graph of segment connections
+g <- graph_from_adj_list(touch, mode = "all")
+
+# component id for each segment
+segments$component <- components(g)$membership
+
+# segment length
+segments$len <- as.numeric(st_length(segments))
+
+# largest connected component by total length
+lcc_id <- segments |>
+  st_drop_geometry() |>
+  summarise(len = sum(len), .by = component) |>
+  slice_max(len, n = 1) |>
+  pull(component)
+
+# mark LCC
+segments$LCC <- segments$component == lcc_id
+
+# connectivity index
+connectivity <- sum(segments$len[segments$LCC]) / sum(segments$len)
+
+# map
+segments_ll <- st_transform(segments, 4326)
+
+leaflet() |>
+  addProviderTiles(providers$CartoDB.Positron) |>
+  addPolylines(data = segments_ll, color = "blue", weight = 1) |>
+  addPolylines(data = segments_ll[segments_ll$LCC, ], color = "red", weight = 3)
+```
+
+```{r}
+# prepare census tracts
+tracts_m <- tracts |>
+  st_transform(25831) |>
+  select(MUNDISSEC)
+
+# split segments by tract
+segments_tract <- st_intersection(
+  segments,
+  tracts_m
+)
+
+# recalculate length after splitting
+segments_tract$len <- as.numeric(st_length(segments_tract))
+
+# compute connectivity per tract
+connectivity_tract <- segments_tract |>
+  st_drop_geometry() |>
+  summarise(
+    total_len = sum(len),
+    lcc_len = sum(len[LCC]),
+    .by = MUNDISSEC
+  ) |>
+  mutate(
+    connectivity = lcc_len / total_len)
+
+# join back to tract geometry
+tracts_connectivity <- tracts_m |>
+  left_join(connectivity_tract, by = "MUNDISSEC")
+
+# transform for leaflet
+tracts_ll <- st_transform(tracts_connectivity, 4326)
+
+# map
+pal <- colorNumeric("YlOrRd", domain = tracts_ll$connectivity, na.color = "transparent")
+
+leaflet(tracts_ll) |>
+  addProviderTiles(providers$CartoDB.Positron) |>
+  addPolygons(
+    fillColor = ~pal(connectivity),
+    fillOpacity = 0.7,
+    color = "grey40",
+    weight = 0.5,
+    popup = ~paste0(
+      "MUNDISSEC: ", MUNDISSEC,
+      "<br>Connectivity: ", round(connectivity, 3)
+    )
+  ) |>
+  addLegend(
+    pal = pal,
+    values = ~connectivity,
+    position = "bottomright",
+    title = "Connectivity",
+    opacity = 0.7
+  )
+```
+
+```{r}
+library(sf)
+library(igraph)
+library(dplyr)
+
+# census tracts
+tracts <- st_read(
+  "data/Revisió_connectivitat.gpkg",
+  layer = "Seccions_censals",
+  quiet = TRUE
+)
+
+tracts_m <- tracts |>
+  st_transform(25831) |>
+  select(MUNDISSEC)
+
+years <- 2017:2025
+
+results_tract <- vector("list", length(years))
+results_city  <- vector("list", length(years))
+
+for (i in seq_along(years)) {
+
+  cycle_year <- st_read(
+    paste0("data/", years[i], "_4T_CARRIL_BICI/", years[i], "_4T_CARRIL_BICI.shp"),
+    quiet = TRUE
+  )
+
+  segments <- cycle_year |>
+    st_transform(25831) |>
+    st_cast("LINESTRING")
+
+  buf <- st_buffer(segments, 15)
+
+  touch <- st_intersects(buf)
+  g <- graph_from_adj_list(touch, mode = "all")
+
+  segments$component <- components(g)$membership
+  segments$len <- as.numeric(st_length(segments))
+
+  lcc_id <- segments |>
+    st_drop_geometry() |>
+    summarise(len = sum(len), .by = component) |>
+    slice_max(len, n = 1) |>
+    pull(component)
+
+  segments$LCC <- segments$component == lcc_id
+
+  # city-level connectivity
+  results_city[[i]] <- segments |>
+    st_drop_geometry() |>
+    summarise(
+      total_len = sum(len),
+      lcc_len = sum(len[LCC])
+    ) |>
+    mutate(
+      connectivity = lcc_len / total_len,
+      year = years[i]
+    )
+
+  # tract-level connectivity
+  segments_tract <- st_intersection(segments, tracts_m)
+  segments_tract$len <- as.numeric(st_length(segments_tract))
+
+  results_tract[[i]] <- segments_tract |>
+    st_drop_geometry() |>
+    summarise(
+      total_len = sum(len),
+      lcc_len = sum(len[LCC]),
+      .by = MUNDISSEC
+    ) |>
+    mutate(
+      connectivity = lcc_len / total_len,
+      year = years[i]
+    )
+}
+
+connectivity_all_years <- bind_rows(results_tract)
+connectivity_city <- bind_rows(results_city)
+```
+
