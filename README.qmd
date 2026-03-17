@@ -1,6 +1,6 @@
 ---
 title: "Barcelona Cycling Network Connectivity (LCC)"
-output: github_document
+output: gfm
 ---
 
 This document shows how to calculate a **cycling network connectivity indicator** for Barcelona using the **Largest Connected Component (LCC)** of the cycling infrastructure network.
