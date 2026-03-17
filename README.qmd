@@ -1,160 +1,111 @@
 ---
 title: "Barcelona Cycling Network Connectivity (LCC)"
-format: gfm
-editor: visual
+output: github_document
 ---
 
-This repository computes a **cycling network connectivity indicator** for Barcelona based on the **Largest Connected Component (LCC)** of the cycling infrastructure network.
+This document shows how to calculate a **cycling network connectivity indicator** for Barcelona using the **Largest Connected Component (LCC)** of the cycling infrastructure network.
 
-The indicator measures the **proportion of the cycling network that belongs to the main connected component**, capturing the degree of **network fragmentation**.
-
-Cycling infrastructure data come from **BCN Open Data**.
+The indicator measures the **share of cycling infrastructure length that belongs to the main connected component** of the network.
 
 # Indicator
 
 Connectivity is defined as:
 
 $$
-Connectivity = \frac{\text{Length of cycling network in the largest connected component}}{\text{Total cycling network length}}
+\text{Connectivity} = \frac{\text{Length of cycling network in the largest connected component}}{\text{Total cycling network length}}
 $$
 
-Interpretation:
+Values closer to **1** indicate a more connected network.
 
-| Value | Meaning |
-|:---|:---|
-| ~1 | Highly connected network |
-| 0.6-0.8 | Moderate fragmentation |
-| <0.5 | Highly fragmented network |
-
-This indicator reflects the **continuity of the cycling network**, not just the total amount of infrastructure.
+In this document, we first show the method for **one year (2025)**, then calculate the indicator for **census tracts**, and finally repeat the same steps for **all years**, so that we can see the trend.
 
 # Data
 
-Cycling infrastructure data are obtained from **BCN Open Data**.
+Cycling infrastructure data are obtained from [**Open Data BCN**](https://opendata-ajuntament.barcelona.cat/data/es/dataset/carril-bici), which provides shapefiles by semester.
 
-Dataset:
-**Carrils bici de Barcelona**
+For consistency, we use the fourth-quarter (T4) dataset for each year from **2017 to 2025**.
 
-The dataset represents the official cycling infrastructure network maintained by the City of Barcelona.
+Census tract boundaries are obtained from the geopackage `Revisió_connectivitat.gpkg`.
 
-# Workflow
-
-1. Load cycling infrastructure data
-2. Clean and prepare the network
-3. Convert the network to a graph
-4. Identify connected components
-5. Compute total network length
-6. Compute length of the largest connected component
-7. Calculate the connectivity indicator
+# 1. Load packages and data
 
 ```{r}
-library(sf)
-library(leaflet)
-
-# st_layers("data/Revisió_connectivitat.gpkg")
-
-cycle <- st_read("data/2025_4T_CARRIL_BICI/2025_4T_CARRIL_BICI.shp")
-
-tracts <- st_read(
-  "data/Revisió_connectivitat.gpkg",
-  layer = "Seccions_censals"
-)
-
-# work in projected CRS for metric buffers
-cycle_m <- st_transform(cycle, 25831)
-tracts_m <- st_transform(tracts, 25831)
-
-# optional buffers
-cycle_buf200 <- st_buffer(cycle_m, 200)
-tracts_buf50 <- st_buffer(tracts_m, 50)
-
-# back to leaflet CRS
-cycle_ll <- st_transform(cycle_m, 4326)
-tracts_ll <- st_transform(tracts_m, 4326)
-cycle_buf200_ll <- st_transform(cycle_buf200, 4326)
-tracts_buf50_ll <- st_transform(tracts_buf50, 4326)
-
-leaflet() |>
-  addProviderTiles(providers$CartoDB.Positron) |>
-  addPolygons(
-    data = tracts_ll,
-    fill = FALSE,
-    color = "black",
-    weight = 1,
-    group = "Census tracts"
-  ) |>
-  addPolygons(
-    data = tracts_buf50_ll,
-    fill = FALSE,
-    color = "red",
-    weight = 1,
-    group = "Tract buffer 50 m"
-  ) |>
-  addPolylines(
-    data = cycle_ll,
-    color = "blue",
-    weight = 2,
-    group = "Bike lanes"
-  ) |>
-  addPolygons(
-    data = cycle_buf200_ll,
-    fillColor = "blue",
-    fillOpacity = 0.15,
-    color = "blue",
-    weight = 1,
-    group = "Bike lane buffer 200 m"
-  ) |>
-  addLayersControl(
-    overlayGroups = c(
-      "Census tracts",
-      "Tract buffer 50 m",
-      "Bike lanes",
-      "Bike lane buffer 200 m"
-    ),
-    options = layersControlOptions(collapsed = FALSE)
-  )
-```
-
-```{r}
+#| message: false
+#| warning: false
+#| paged-print: false
 library(sf)
 library(igraph)
 library(dplyr)
 library(leaflet)
+library(ggplot2)
 
-# prepare segments
-segments <- cycle |>
+segments <- st_read(
+  "data/2025_4T_CARRIL_BICI/2025_4T_CARRIL_BICI.shp",
+  quiet = TRUE
+)
+
+tracts <- st_read(
+  "data/Revisió_connectivitat.gpkg",
+  layer = "Seccions_censals",
+  quiet = TRUE
+)
+```
+
+# 2. Prepare the cycling network for 2025
+
+We first transform the cycling network to a projected CRS so that distances and lengths are measured in metres.
+
+```{r}
+segments <- segments |>
   st_transform(25831) |>
   st_cast("LINESTRING")
+```
 
-# 5 m buffer on each side = connect segments up to 10 m apart
-buf <- st_buffer(segments, 15)
+# 3. Identify the largest connected component
 
-# identify which buffered segments touch
+To identify connected parts of the network, we create a small buffer around each segment and check which segments touch each other.
+
+```{r}
+
+buffer_dist <- 5
+
+buf <- st_buffer(segments, buffer_dist)
+
 touch <- st_intersects(buf)
 
-# build graph of segment connections
 g <- graph_from_adj_list(touch, mode = "all")
 
-# component id for each segment
 segments$component <- components(g)$membership
-
-# segment length
 segments$len <- as.numeric(st_length(segments))
+```
 
-# largest connected component by total length
+Now we identify which component has the greatest total length.
+
+```{r}
 lcc_id <- segments |>
   st_drop_geometry() |>
   summarise(len = sum(len), .by = component) |>
   slice_max(len, n = 1) |>
   pull(component)
 
-# mark LCC
 segments$LCC <- segments$component == lcc_id
+```
 
-# connectivity index
+# 4. Calculate city-level connectivity for 2025
+
+```{r}
 connectivity <- sum(segments$len[segments$LCC]) / sum(segments$len)
 
-# map
+connectivity
+```
+
+# 5. Visualise the main connected component
+
+In the map below:
+- **blue** shows all cycling segments
+- **red** shows the segments that belong to the largest connected component
+
+```{r}
 segments_ll <- st_transform(segments, 4326)
 
 leaflet() |>
@@ -163,22 +114,19 @@ leaflet() |>
   addPolylines(data = segments_ll[segments_ll$LCC, ], color = "red", weight = 3)
 ```
 
+# 6. Calculate connectivity by census tract for 2025
+
+Now we calculate, for each census tract, the share of cycling infrastructure length that belongs to the city's largest connected component.
+
 ```{r}
-# prepare census tracts
 tracts_m <- tracts |>
   st_transform(25831) |>
   select(MUNDISSEC)
 
-# split segments by tract
-segments_tract <- st_intersection(
-  segments,
-  tracts_m
-)
+segments_tract <- st_intersection(segments, tracts_m)
 
-# recalculate length after splitting
 segments_tract$len <- as.numeric(st_length(segments_tract))
 
-# compute connectivity per tract
 connectivity_tract <- segments_tract |>
   st_drop_geometry() |>
   summarise(
@@ -187,19 +135,27 @@ connectivity_tract <- segments_tract |>
     .by = MUNDISSEC
   ) |>
   mutate(
-    connectivity = lcc_len / total_len)
+    connectivity = lcc_len / total_len
+  )
 
-# join back to tract geometry
+connectivity_tract
+```
+
+# 7. Map connectivity by census tract for 2025
+
+```{r}
 tracts_connectivity <- tracts_m |>
   left_join(connectivity_tract, by = "MUNDISSEC")
 
-# transform for leaflet
 tracts_ll <- st_transform(tracts_connectivity, 4326)
 
-# map
-pal <- colorNumeric("YlOrRd", domain = tracts_ll$connectivity, na.color = "transparent")
+pal <- colorNumeric(
+  "YlOrRd",
+  domain = tracts_ll$connectivity,
+  na.color = "transparent"
+)
 
-leaflet(tracts_ll) |>
+leaflet(data = tracts_ll) |>
   addProviderTiles(providers$CartoDB.Positron) |>
   addPolygons(
     fillColor = ~pal(connectivity),
@@ -220,26 +176,15 @@ leaflet(tracts_ll) |>
   )
 ```
 
+# 8. Repeat the calculation for all years
+
+After understanding the method for one year, we can repeat the same calculation for all years.
+
 ```{r}
-library(sf)
-library(igraph)
-library(dplyr)
-
-# census tracts
-tracts <- st_read(
-  "data/Revisió_connectivitat.gpkg",
-  layer = "Seccions_censals",
-  quiet = TRUE
-)
-
-tracts_m <- tracts |>
-  st_transform(25831) |>
-  select(MUNDISSEC)
-
 years <- 2017:2025
 
 results_tract <- vector("list", length(years))
-results_city  <- vector("list", length(years))
+results_city <- vector("list", length(years))
 
 for (i in seq_along(years)) {
 
@@ -252,8 +197,7 @@ for (i in seq_along(years)) {
     st_transform(25831) |>
     st_cast("LINESTRING")
 
-  buf <- st_buffer(segments, 15)
-
+  buf <- st_buffer(segments, buffer_dist)
   touch <- st_intersects(buf)
   g <- graph_from_adj_list(touch, mode = "all")
 
@@ -268,7 +212,6 @@ for (i in seq_along(years)) {
 
   segments$LCC <- segments$component == lcc_id
 
-  # city-level connectivity
   results_city[[i]] <- segments |>
     st_drop_geometry() |>
     summarise(
@@ -280,7 +223,6 @@ for (i in seq_along(years)) {
       year = years[i]
     )
 
-  # tract-level connectivity
   segments_tract <- st_intersection(segments, tracts_m)
   segments_tract$len <- as.numeric(st_length(segments_tract))
 
@@ -300,4 +242,20 @@ for (i in seq_along(years)) {
 connectivity_all_years <- bind_rows(results_tract)
 connectivity_city <- bind_rows(results_city)
 ```
+
+# 9. Plot city-level connectivity over time
+
+```{r}
+ggplot(connectivity_city, aes(year, connectivity)) +
+  geom_line() +
+  geom_point()
+```
+
+# Final note
+
+In this document, the tract-level indicator is defined as:
+
+> the share of cycling infrastructure length in each census tract that belongs to the largest connected cycling component of the city.
+
+This is different from calculating connectivity separately inside each tract.
 
