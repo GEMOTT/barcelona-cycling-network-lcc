@@ -19,6 +19,8 @@ Values closer to **1** indicate a more connected network.
 
 In this document, we first show the method for **one year (2025)**, then calculate the indicator for **census tracts**, and finally repeat the same steps for **all years**, so that we can see the trend.
 
+In the final step, we also save the resulting city-level and census-tract tables as `.csv` files in an `outputs/` folder, so students can see where the results are stored and reuse them in later analyses or maps.
+
 # Data
 
 Cycling infrastructure data are obtained from [**Open Data BCN**](https://opendata-ajuntament.barcelona.cat/data/es/dataset/carril-bici), which provides shapefiles by semester.
@@ -179,7 +181,7 @@ leaflet(data = tracts_ll) |>
   )
 ```
 
-# 8. Repeat the calculation for all years
+# 8. Repeat the calculation for all years and save outputs
 
 After understanding the method for one year, we can repeat the same calculation for all years.
 
@@ -244,7 +246,11 @@ for (i in seq_along(years)) {
 
 connectivity_all_years <- bind_rows(results_tract)
 connectivity_city <- bind_rows(results_city)
+```
 
+Now we save both output tables. The first file contains census-tract connectivity for all years, and the second contains city-level connectivity for all years. Both files are saved in the `outputs/` folder.
+
+```{r}
 dir.create("outputs", showWarnings = FALSE)
 
 write.csv(connectivity_all_years,

@@ -22,6 +22,11 @@ In this document, we first show the method for **one year (2025)**, then
 calculate the indicator for **census tracts**, and finally repeat the
 same steps for **all years**, so that we can see the trend.
 
+In the final step, we also save the resulting city-level and
+census-tract tables as `.csv` files in an `outputs/` folder, so students
+can see where the results are stored and reuse them in later analyses or
+maps.
+
 # Data
 
 Cycling infrastructure data are obtained from [**Open Data
@@ -800,7 +805,7 @@ leaflet(data = tracts_ll) |>
 
 ![](README_files/figure-commonmark/unnamed-chunk-8-1.png)
 
-# 8. Repeat the calculation for all years
+# 8. Repeat the calculation for all years and save outputs
 
 After understanding the method for one year, we can repeat the same
 calculation for all years.
@@ -887,7 +892,14 @@ for (i in seq_along(years)) {
 ``` r
 connectivity_all_years <- bind_rows(results_tract)
 connectivity_city <- bind_rows(results_city)
+```
 
+Now we save both output tables. The first file contains census-tract
+connectivity for all years, and the second contains city-level
+connectivity for all years. Both files are saved in the `outputs/`
+folder.
+
+``` r
 dir.create("outputs", showWarnings = FALSE)
 
 write.csv(connectivity_all_years,
@@ -907,4 +919,4 @@ ggplot(connectivity_city, aes(year, connectivity)) +
   geom_point()
 ```
 
-![](README_files/figure-commonmark/unnamed-chunk-10-1.png)
+![](README_files/figure-commonmark/unnamed-chunk-11-1.png)
