@@ -68,11 +68,13 @@ segments <- segments |>
 
 # 3. Identify the largest connected component
 
-To identify connected parts of the network, we create a small buffer
-around each segment and check which segments touch each other.
+To identify connected parts of the network, we slightly buffer each
+segment so that small gaps or digitising inaccuracies do not break
+connectivity. We then detect which segments intersect and group them
+into connected components.
 
 ``` r
-buffer_dist <- 5
+buffer_dist <- 5 # buffer distance in meters, change as you like
 
 buf <- st_buffer(segments, buffer_dist)
 
@@ -108,8 +110,12 @@ connectivity
 
 # 5. Visualise the main connected component
 
-In the map below: - **blue** shows all cycling segments - **red** shows
-the segments that belong to the largest connected component
+In the map below:
+
+- **grey** shows all cycling segments
+
+- **red** shows the segments that belong to the largest connected
+  component
 
 ``` r
 segments_ll <- st_transform(segments, 4326)
@@ -892,13 +898,3 @@ ggplot(connectivity_city, aes(year, connectivity)) +
 ```
 
 ![](README_files/figure-commonmark/unnamed-chunk-10-1.png)
-
-# Final note
-
-In this document, the tract-level indicator is defined as:
-
-> the share of cycling infrastructure length in each census tract that
-> belongs to the largest connected cycling component of the city.
-
-This is different from calculating connectivity separately inside each
-tract.
