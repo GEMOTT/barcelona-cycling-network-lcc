@@ -887,6 +887,16 @@ for (i in seq_along(years)) {
 ``` r
 connectivity_all_years <- bind_rows(results_tract)
 connectivity_city <- bind_rows(results_city)
+
+dir.create("outputs", showWarnings = FALSE)
+
+write.csv(connectivity_all_years,
+          "outputs/connectivity_tract_2017_2025.csv",
+          row.names = FALSE)
+
+write.csv(connectivity_city,
+          "outputs/connectivity_city_2017_2025.csv",
+          row.names = FALSE)
 ```
 
 # 9. Plot city-level connectivity over time
