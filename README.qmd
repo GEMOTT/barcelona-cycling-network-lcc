@@ -1,6 +1,6 @@
 ---
 title: "Barcelona Cycling Network Connectivity (LCC)"
-format: gfm
+format: html
 ---
 
 This document shows how to calculate a **cycling network connectivity indicator** for Barcelona using the **Largest Connected Component (LCC)** of the cycling infrastructure network.
@@ -102,15 +102,18 @@ connectivity
 # 5. Visualise the main connected component
 
 In the map below:
-- **blue** shows all cycling segments
-- **red** shows the segments that belong to the largest connected component
+
+- **grey** shows all cycling segments
+
+- **red** shows the segments that belong to the largest connected 
+component
 
 ```{r}
 segments_ll <- st_transform(segments, 4326)
 
 leaflet() |>
   addProviderTiles(providers$CartoDB.Positron) |>
-  addPolylines(data = segments_ll, color = "blue", weight = 1) |>
+  addPolylines(data = segments_ll, color = "grey", weight = 3) |>
   addPolylines(data = segments_ll[segments_ll$LCC, ], color = "red", weight = 3)
 ```
 
@@ -150,8 +153,8 @@ tracts_connectivity <- tracts_m |>
 tracts_ll <- st_transform(tracts_connectivity, 4326)
 
 pal <- colorNumeric(
-  "YlOrRd",
-  domain = tracts_ll$connectivity,
+  palette = "viridis",
+  domain = c(0, 1),
   na.color = "transparent"
 )
 
@@ -250,12 +253,4 @@ ggplot(connectivity_city, aes(year, connectivity)) +
   geom_line() +
   geom_point()
 ```
-
-# Final note
-
-In this document, the tract-level indicator is defined as:
-
-> the share of cycling infrastructure length in each census tract that belongs to the largest connected cycling component of the city.
-
-This is different from calculating connectivity separately inside each tract.
 

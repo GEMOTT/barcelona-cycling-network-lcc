@@ -116,7 +116,7 @@ segments_ll <- st_transform(segments, 4326)
 
 leaflet() |>
   addProviderTiles(providers$CartoDB.Positron) |>
-  addPolylines(data = segments_ll, color = "blue", weight = 1) |>
+  addPolylines(data = segments_ll, color = "grey", weight = 3) |>
   addPolylines(data = segments_ll[segments_ll$LCC, ], color = "red", weight = 3)
 ```
 
@@ -766,8 +766,8 @@ tracts_connectivity <- tracts_m |>
 tracts_ll <- st_transform(tracts_connectivity, 4326)
 
 pal <- colorNumeric(
-  "YlOrRd",
-  domain = tracts_ll$connectivity,
+  palette = "viridis",
+  domain = c(0, 1),
   na.color = "transparent"
 )
 
